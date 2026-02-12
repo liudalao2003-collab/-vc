@@ -26,12 +26,19 @@ const SimpleMarkdown = ({ text }: { text: string }) => {
   );
 };
 
-// Helper to clean JSON string from markdown code blocks
+// Helper to clean JSON string from markdown code blocks and extract valid JSON
 const cleanJson = (text: string) => {
   if (!text) return text;
-  // Remove markdown code blocks if present
+  // 1. Remove markdown code blocks if present
   let cleaned = text.replace(/```json\n?|\n?```/g, '');
   cleaned = cleaned.replace(/```\n?/g, '');
+  
+  // 2. Extract JSON object using regex (find first { and last })
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    return jsonMatch[0];
+  }
+  
   return cleaned.trim();
 };
 
