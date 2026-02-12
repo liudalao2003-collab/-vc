@@ -1,0 +1,826 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Briefcase, DollarSign, Zap, AlertTriangle, CheckCircle, XCircle, ChevronRight, Terminal, BarChart3, Rocket, Eye, Sparkles, MessageSquare, Send, User, Bot, BookOpen, Mic, Flame, Mail, Layout, PenTool, ArrowRight, Copy, Ghost, Download, FileText, Skull, RefreshCw } from 'lucide-react';
+
+/**
+ * 商业孵化器首席分析师 - 0-1 创业导师应用
+ * V5.5 Refined Control Edition:
+ * 1. 商业模式优化: 方向 A 和 B 支持**独立重新生成** (Regenerate Individual Model)。
+ * 2. 执行计划优化: 支持**全套方案重新生成** (Regenerate Full Plan)，确保 Phase 0-2 逻辑连贯。
+ * 3. 核心保持: 完整保留 V5 系列所有核心功能。
+ */
+
+// 轻量级 Markdown 渲染组件
+const SimpleMarkdown = ({ text }: { text: string }) => {
+  if (!text) return null;
+  return (
+    <div className="whitespace-pre-wrap leading-relaxed font-mono text-sm text-slate-300">
+      {text.split(/(\*\*.*?\*\*)/g).map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={index} className="text-emerald-400 font-bold">{part.slice(2, -2)}</strong>;
+        }
+        return part;
+      })}
+    </div>
+  );
+};
+
+// Helper to clean JSON string from markdown code blocks
+const cleanJson = (text: string) => {
+  if (!text) return text;
+  // Remove markdown code blocks if present
+  let cleaned = text.replace(/```json\n?|\n?```/g, '');
+  cleaned = cleaned.replace(/```\n?/g, '');
+  return cleaned.trim();
+};
+
+const StartupMentor = () => {
+  const [jdText, setJdText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState('');
+  
+  // Chat State
+  const [chatInput, setChatInput] = useState('');
+  const [chatHistory, setChatHistory] = useState<any[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Feature States
+  const [pitchLoading, setPitchLoading] = useState<Record<string, boolean>>({}); 
+  const [pitches, setPitches] = useState<Record<string, string>>({}); 
+  
+  // Roast States
+  const [roastLoading, setRoastLoading] = useState(false); 
+  const [roastItemLoading, setRoastItemLoading] = useState<Record<number, boolean>>({}); 
+  const [roastResult, setRoastResult] = useState<any>(null);
+
+  // Phase Tools States
+  const [phaseLoading, setPhaseLoading] = useState<Record<number, boolean>>({});
+  const [phaseResults, setPhaseResults] = useState<Record<number, string>>({}); 
+  
+  // Grey Hat States
+  const [greyHatLoading, setGreyHatLoading] = useState(false); 
+  const [greyHatItemLoading, setGreyHatItemLoading] = useState<Record<number, boolean>>({}); 
+
+  // New Loading States for V5.5
+  const [modelRegenLoading, setModelRegenLoading] = useState<Record<string, boolean>>({}); // { direction_a: bool, direction_b: bool }
+  const [planRegenLoading, setPlanRegenLoading] = useState(false);
+
+  const SAMPLE_JD = `
+岗位：资深 AI 应用工程师 (Remote)
+薪资：40k-60k/月 + 期权
+职责：
+1. 负责公司内部 AI 知识库工具的开发，帮助销售团队快速检索产品资料。
+2. 对接 OpenAI/Claude API，优化 Prompt Engineering，提升回答准确率。
+3. 解决非结构化数据（PDF/Word）的清洗和向量化存储问题。
+要求：
+- 熟悉 LangChain, Vector DB (Pinecone/Milvus)。
+- 有 RAG (检索增强生成) 实际落地经验。
+- 能独立完成从后端 Python 到前端 React 的全栈开发。
+  `;
+
+  // System Prompt
+  const SYSTEM_PROMPT = `
+    # Role: 毒舌、老练且深谙人性弱点的商业导师 (Startup Mentor)
+    
+    # Task:
+    透过 JD 为用户规划年入百万的路径。不仅要给正规军的打法，还要给点“野路子”。
+    
+    # CRITICAL INSTRUCTIONS:
+    1. **深度分析**：JSON value 必须深度结合具体行业。
+    2. **拒绝空话**：必须给出具体工具名、平台名。
+    3. **灰帽思维**：在 grey_area 部分，提供 3 个“非共识”的增长手段。手段应涉及“利用规则漏洞”、“自动化截流”或“信息差套利”，**必须高效、粗暴，但要提示风险**。
+    
+    # Output Format (Strict JSON):
+    {
+      "deep_dive": {
+        "pain_point": "分析企业面临的真金白银的损失。",
+        "scarcity": "分析为什么市场上现成的工具不够用。",
+        "type": "属于 工具SaaS型 / 专家服务型 / 劳动力密集型"
+      },
+      "verdict": {
+        "status": "GO" 或 "NO_GO",
+        "title": "简短犀利的评级标题",
+        "reason": "毒舌点评理由。"
+      },
+      "business_model": {
+        "direction_a": { "name": "方向A(SaaS)", "desc": "如何封装成软件？" },
+        "direction_b": { "name": "方向B(服务)", "desc": "如何做成标准化服务？" },
+        "math": "百万年收计算公式"
+      },
+      "grey_area": {
+        "intro": "用一句话描述这个行业的灰色套利机会。",
+        "tactics": [
+           { "title": "手段1：竞品截流", "desc": "具体怎么操作？", "risk": "封号风险/法律风险等级" },
+           { "title": "手段2：自动化矩阵", "desc": "如何用脚本/RPA实现？", "risk": "风险等级" },
+           { "title": "手段3：信息差搬运", "desc": "如何利用信息差？", "risk": "风险等级" }
+        ]
+      },
+      "execution_plan": [
+        { "phase": "第1周：低成本验证", "action": "具体去哪里找客户？" },
+        { "phase": "第1-2月：MVP (最小闭环)", "action": "核心功能只做一个是什么？" },
+        { "phase": "第3月：精准获客", "action": "流量密码在哪里？" }
+      ]
+    }
+  `;
+
+  const scrollToChat = () => {
+    setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
+
+  // Helper function to call the Next.js API
+  const callAI = async (prompt: string) => {
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      return data.text;
+    } catch (err: any) {
+      console.error(err);
+      throw new Error(err.message || "Failed to fetch AI response");
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!jdText.trim()) return;
+    
+    setLoading(true);
+    setError('');
+    setResult(null);
+    setChatHistory([]);
+    setPitches({});
+    setRoastResult(null);
+    setPhaseResults({});
+    setRoastItemLoading({});
+    setGreyHatItemLoading({});
+    setModelRegenLoading({});
+    setPlanRegenLoading(false);
+
+    try {
+      const prompt = `${SYSTEM_PROMPT}\n\nUser Input JD:\n${jdText}`;
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      setResult(JSON.parse(cleanedText));
+    } catch (err) {
+      console.error(err);
+      setError("导师正在整理复杂的商业逻辑，请重试以获取更清晰的报告。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- NEW V5.5 Regenerate Functions ---
+
+  // Regenerate Single Business Model
+  const regenerateModel = async (dirKey: string) => {
+    setModelRegenLoading(prev => ({ ...prev, [dirKey]: true }));
+    
+    const typeText = dirKey === 'direction_a' ? 'SaaS Product' : 'Productized Service';
+    const currentName = result.business_model[dirKey].name;
+    
+    const prompt = `
+      CONTEXT: JD: ${jdText}. Deep Dive Pain Point: ${result.deep_dive.pain_point}.
+      TASK: Generate a NEW and DIFFERENT Business Model Idea for Direction: ${typeText}.
+      CONSTRAINT: Must be distinct from the current idea: "${currentName}".
+      OUTPUT JSON: { "name": "New Name", "desc": "New detailed description with logic." }
+    `;
+
+    try {
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      const newModel = JSON.parse(cleanedText);
+      
+      setResult((prev: any) => ({
+        ...prev,
+        business_model: {
+          ...prev.business_model,
+          [dirKey]: newModel
+        }
+      }));
+      // Reset pitch for this direction since model changed
+      setPitches(prev => {
+        const newPitches = { ...prev };
+        delete newPitches[dirKey];
+        return newPitches;
+      });
+
+    } catch (e) { console.error(e); } finally { setModelRegenLoading(prev => ({ ...prev, [dirKey]: false })); }
+  };
+
+  // Regenerate Full Execution Plan
+  const regenerateExecutionPlan = async () => {
+    setPlanRegenLoading(true);
+    
+    const prompt = `
+      CONTEXT: JD: ${jdText}. Business Model A: ${result.business_model.direction_a.name}.
+      TASK: Rewrite the entire 3-Phase Execution Plan.
+      GOAL: Provide a DIFFERENT, perhaps more aggressive or alternative path to $1M/year.
+      CONSTRAINT: Ensure logic flows from Phase 0 to Phase 2.
+      OUTPUT JSON: [
+        { "phase": "第1周：低成本验证...", "action": "New specific action..." },
+        { "phase": "第1-2月：MVP...", "action": "New specific action..." },
+        { "phase": "第3月：精准获客...", "action": "New specific action..." }
+      ]
+    `;
+
+    try {
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      const newPlan = JSON.parse(cleanedText);
+      
+      setResult((prev: any) => ({
+        ...prev,
+        execution_plan: newPlan
+      }));
+      // Clear generated tools as they might not match new plan
+      setPhaseResults({});
+
+    } catch (e) { console.error(e); } finally { setPlanRegenLoading(false); }
+  };
+
+  // --- Existing Generators ---
+
+  const generatePhaseTool = async (phaseIndex: number) => {
+    setPhaseLoading(prev => ({ ...prev, [phaseIndex]: true }));
+    let toolPrompt = "";
+    // Note: Use current result context to ensure relevance after regeneration
+    if (phaseIndex === 0) toolPrompt = `Write a "Sniper Outreach" message (Cold DM). Context: ${result.deep_dive.pain_point}. Casual, short. Output: Subject + Body in Chinese. Use **bold** for key phrases.`;
+    else if (phaseIndex === 1) toolPrompt = `Write Landing Page Copy (H1, Subhead, CTA, 3 Benefits). Context: ${result.business_model.direction_a.name}. Output in Chinese. Use **bold** for headers.`;
+    else if (phaseIndex === 2) toolPrompt = `Generate 5 Viral Content Titles (Zhihu/Xiaohongshu style). Context: ${result.deep_dive.scarcity}. Output in Chinese. Use **bold** for keywords.`;
+
+    try {
+      const text = await callAI(toolPrompt);
+      // Phase tools return text directly, not JSON
+      setPhaseResults(prev => ({ ...prev, [phaseIndex]: text }));
+    } catch (e) { console.error(e); } finally { setPhaseLoading(prev => ({ ...prev, [phaseIndex]: false })); }
+  };
+
+  const generatePitch = async (key: string, data: any) => {
+    setPitchLoading(prev => ({ ...prev, [key]: true }));
+    const prompt = `Write a 30s Elevator Pitch for: ${data.name}. Context: ${data.desc}. Pain: ${result.deep_dive.pain_point}. Output in Chinese. Use **bold** for emphasis.`;
+    try {
+      const text = await callAI(prompt);
+      setPitches(prev => ({ ...prev, [key]: text }));
+    } catch (e) {} finally { setPitchLoading(prev => ({ ...prev, [key]: false })); }
+  };
+
+  const generateVcRoast = async () => {
+    setRoastLoading(true);
+    const prompt = `ROLE: Skeptical VC. CONTEXT: ${JSON.stringify(result)}. TASK: 3 fatal flaws + 3 tough questions + cheat sheet answers. Output JSON { "questions": [{ "q": "", "a": "" }] }.`;
+    try {
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      setRoastResult(JSON.parse(cleanedText));
+    } catch (e) {} finally { setRoastLoading(false); }
+  };
+
+  const regenerateRoastItem = async (index: number) => {
+    setRoastItemLoading(prev => ({ ...prev, [index]: true }));
+    const currentQ = roastResult.questions[index].q;
+    const prompt = `ROLE: Skeptical VC. CONTEXT: ${JSON.stringify(result)}. TASK: Generate 1 NEW tough VC question/answer to replace: "${currentQ}". Output JSON: { "q": "", "a": "" }`;
+    try {
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      const newItem = JSON.parse(cleanedText);
+      setRoastResult((prev: any) => {
+        const newQuestions = [...prev.questions];
+        newQuestions[index] = newItem;
+        return { ...prev, questions: newQuestions };
+      });
+    } catch (e) { console.error(e); } finally { setRoastItemLoading(prev => ({ ...prev, [index]: false })); }
+  };
+
+  const generateGreyHat = async () => {
+    setGreyHatLoading(true);
+    const prompt = `Generate 3 NEW and DISTINCT Grey Hat Growth Tactics for industry: ${result.deep_dive.scarcity}. Unconventional. Output JSON: { "tactics": [{ "title": "", "desc": "", "risk": "" }] }`;
+    try {
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      const parsed = JSON.parse(cleanedText);
+      const newTactics = parsed.tactics || parsed; // Handle potential format variation
+      setResult((prev: any) => ({ ...prev, grey_area: { ...prev.grey_area, tactics: newTactics } }));
+    } catch (e) { console.error(e); } finally { setGreyHatLoading(false); }
+  };
+
+  const regenerateGreyHatItem = async (index: number) => {
+    setGreyHatItemLoading(prev => ({ ...prev, [index]: true }));
+    const currentTactic = result.grey_area.tactics[index].title;
+    const prompt = `Generate 1 NEW Grey Hat Tactic for: ${result.deep_dive.scarcity}. Avoid: "${currentTactic}". Output JSON: { "title": "", "desc": "", "risk": "" }`;
+    try {
+      const text = await callAI(prompt);
+      const cleanedText = cleanJson(text);
+      const newItem = JSON.parse(cleanedText);
+      setResult((prev: any) => {
+        const newTactics = [...prev.grey_area.tactics];
+        newTactics[index] = newItem;
+        return { ...prev, grey_area: { ...prev.grey_area, tactics: newTactics } };
+      });
+    } catch (e) { console.error(e); } finally { setGreyHatItemLoading(prev => ({ ...prev, [index]: false })); }
+  };
+
+  const handleChatSubmit = async () => {
+    if (!chatInput.trim() || !result) return;
+    const userMsg = chatInput;
+    setChatInput('');
+    setChatHistory(prev => [...prev, { role: 'user', content: userMsg }]);
+    setChatLoading(true);
+    scrollToChat();
+    const chatContext = `You are the Startup Mentor. CONTEXT: Original JD: ${jdText}. Analysis: ${JSON.stringify(result)}. USER QUESTION: ${userMsg}. INSTRUCTION: Answer in Chinese. Practical.`;
+    try {
+      const text = await callAI(chatContext);
+      setChatHistory(prev => [...prev, { role: 'model', content: text }]);
+    } catch (e) { setChatHistory(prev => [...prev, { role: 'model', content: "导师掉线了，请重试。" }]); }
+    finally { setChatLoading(false); scrollToChat(); }
+  };
+
+  const handleSaveReport = () => {
+    if (!result) return;
+    const date = new Date().toLocaleDateString();
+    
+    let htmlContent = `
+      <!DOCTYPE html>
+      <html lang="zh-CN">
+      <head>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>VC 孵化器透视镜报告</title>
+        <style>
+          body { font-family: system-ui; line-height: 1.6; color: #1f2937; max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+          h1 { border-bottom: 2px solid #059669; padding-bottom: 15px; }
+          .section { margin-bottom: 20px; border: 1px solid #e5e7eb; padding: 20px; border-radius: 8px; background: #f9fafb; }
+          .tag-risk { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
+          pre { background: #1f2937; color: #f3f4f6; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
+          .user-msg { color: #2563eb; } .bot-msg { color: #059669; }
+        </style>
+      </head>
+      <body>
+        <h1>VC 孵化器透视镜 - 深度分析报告</h1>
+        <div style="color: #6b7280; margin-bottom: 40px;">日期: ${date}</div>
+        
+        <h2>1. 深度解码</h2>
+        <div class="section">
+          <p><strong>💰 痛点:</strong> ${result.deep_dive.pain_point}</p>
+          <p><strong>⚖️ 供需:</strong> ${result.deep_dive.scarcity}</p>
+          <p><strong>🏁 评级:</strong> ${result.verdict.title} (${result.verdict.reason})</p>
+        </div>
+
+        <h2>2. 商业模式</h2>
+        <div class="section">
+          <h3>A: ${result.business_model.direction_a.name}</h3><p>${result.business_model.direction_a.desc}</p>
+          ${pitches.direction_a ? `<p><em>🎙️ Pitch: ${pitches.direction_a}</em></p>` : ''}
+          <h3>B: ${result.business_model.direction_b.name}</h3><p>${result.business_model.direction_b.desc}</p>
+          ${pitches.direction_b ? `<p><em>🎙️ Pitch: ${pitches.direction_b}</em></p>` : ''}
+          <div style="margin-top:15px; font-weight:bold; color:#059669;">💰 ${result.business_model.math}</div>
+        </div>
+
+        ${result.grey_area ? `<h2>3. 灰帽实验室</h2><div class="section" style="background:#fff1f2; border-color:#fca5a5;">
+          <p>${result.grey_area.intro}</p><ul>
+          ${result.grey_area.tactics.map((t: any) => `<li><strong>${t.title}</strong>: ${t.desc} <span class="tag-risk">${t.risk}</span></li>`).join('')}
+          </ul></div>` : ''}
+
+        <h2>4. 执行计划</h2>
+        ${result.execution_plan.map((step: any, i: number) => `
+          <div class="section"><h3>${step.phase}</h3><p>${step.action}</p>
+          ${phaseResults[i] ? `<pre>${phaseResults[i]}</pre>` : ''}</div>
+        `).join('')}
+
+        ${roastResult ? `<h2>5. 压力测试</h2><div class="section">
+          ${roastResult.questions.map((q: any, i: number) => `<p><strong>Q${i+1}: ${q.q}</strong><br/>A: ${q.a}</p>`).join('')}</div>` : ''}
+
+        ${chatHistory.length > 0 ? `<h2>6. 问答记录</h2><div class="section">
+          ${chatHistory.map(msg => `<p class="${msg.role === 'user' ? 'user-msg' : 'bot-msg'}"><strong>${msg.role === 'user' ? '我' : '导师'}:</strong> ${msg.content}</p>`).join('')}</div>` : ''}
+      </body></html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Startup_Report_${Date.now()}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-emerald-500/30 flex flex-col">
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+              <BarChart3 className="w-6 h-6 text-emerald-400" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-100 tracking-tight">VC 孵化器透视镜 <span className="text-xs bg-emerald-600 text-white px-2 py-0.5 rounded ml-2 shadow-lg shadow-emerald-500/20">V5.5</span></h1>
+              <p className="text-xs text-slate-400 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Perfected Control • Full Regen
+              </p>
+            </div>
+          </div>
+          {result && (
+            <button 
+              onClick={handleSaveReport}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors border border-slate-700"
+            >
+              <Download className="w-4 h-4" />
+              导出全案 HTML
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-6 py-8 pb-32 flex-grow w-full">
+        
+        {/* Intro */}
+        {!result && !loading && (
+          <div className="mb-10 text-center py-16 animate-in fade-in zoom-in-95 duration-700">
+            <h2 className="text-5xl font-extrabold text-slate-100 mb-6 tracking-tight leading-tight">
+              不仅懂白道，更懂 <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-zinc-400 to-slate-200">灰色地带的流量法则</span>
+            </h2>
+            <p className="text-slate-400 max-w-2xl mx-auto text-lg leading-relaxed mb-10">
+              终极形态的 AI 创业导师：包含正规打法 + <span className="text-slate-200 font-medium border-b border-zinc-500/30"> 灰帽手段 </span> + <span className="text-slate-200 font-medium border-b border-zinc-500/30"> 实战工具生成 </span>。
+              <br/>支持一键导出精美网页报告，随时复盘。
+            </p>
+            <button 
+              onClick={() => setJdText(SAMPLE_JD)}
+              className="text-sm px-6 py-3 rounded-full bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-400 hover:text-emerald-400 transition-all flex items-center gap-2 mx-auto group"
+            >
+              <Sparkles className="w-4 h-4 group-hover:text-yellow-400 transition-colors" />
+              加载【资深 AI 工程师】案例，体验最终版
+            </button>
+          </div>
+        )}
+
+        {/* Input */}
+        <div className="relative group z-10 mb-12">
+          <div className="absolute -inset-1 bg-gradient-to-r from-emerald-600 to-cyan-600 rounded-2xl blur opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-200"></div>
+          <div className="relative bg-slate-900 rounded-xl border border-slate-800 p-1 shadow-2xl">
+            <textarea
+              value={jdText}
+              onChange={(e) => setJdText(e.target.value)}
+              placeholder="在此处粘贴岗位信息 (JD)... &#10;越详细的 JD，分析出的灰色套利空间越精准。"
+              className="w-full h-40 bg-slate-950/50 text-slate-300 placeholder:text-slate-600 p-5 rounded-lg outline-none resize-none focus:bg-slate-950 transition-colors font-mono text-sm leading-relaxed"
+            />
+            <div className="flex justify-end items-center px-4 py-3 border-t border-slate-800 bg-slate-900 rounded-b-lg">
+              <button
+                onClick={handleAnalyze}
+                disabled={loading || !jdText.trim()}
+                className={`flex items-center gap-2 px-8 py-2.5 rounded-lg font-bold text-sm transition-all duration-300 ${
+                  loading || !jdText.trim()
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30 hover:shadow-emerald-500/40 transform hover:-translate-y-0.5'
+                }`}
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                    正在挖掘商业漏洞...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 fill-current" />
+                    深度解码 & 挖掘灰产
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Results */}
+        {result && (
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            
+            {/* 1. Deep Dive Cards */}
+            <div className="grid md:grid-cols-3 gap-6">
+               <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl hover:border-cyan-500/30 transition-all">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-cyan-500/10 rounded-lg"><Eye className="w-5 h-5 text-cyan-400" /></div>
+                    <h4 className="font-bold text-slate-200">痛点 (Pain)</h4>
+                  </div>
+                  <SimpleMarkdown text={result.deep_dive.pain_point} />
+               </div>
+               <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl hover:border-amber-500/30 transition-all">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-amber-500/10 rounded-lg"><Briefcase className="w-5 h-5 text-amber-400" /></div>
+                    <h4 className="font-bold text-slate-200">供需 (Scarcity)</h4>
+                  </div>
+                  <SimpleMarkdown text={result.deep_dive.scarcity} />
+               </div>
+               <div className={`bg-slate-900/80 border p-6 rounded-2xl transition-all ${
+                 result.verdict.status === 'GO' ? 'border-emerald-500/30' : 'border-red-500/30'
+               }`}>
+                  <div className="flex items-center gap-3 mb-4">
+                    {result.verdict.status === 'GO' ? <CheckCircle className="w-8 h-8 text-emerald-400" /> : <XCircle className="w-8 h-8 text-red-400" />}
+                    <h4 className={`font-bold text-lg ${result.verdict.status === 'GO' ? 'text-emerald-400' : 'text-red-400'}`}>{result.verdict.title}</h4>
+                  </div>
+                  <p className="text-slate-400 text-sm leading-relaxed">{result.verdict.reason}</p>
+               </div>
+            </div>
+
+            {/* 🏴‍☠️ Grey Hat Lab */}
+            {result.grey_area && (
+              <div className="mt-8">
+                 <div className="bg-zinc-900/50 border border-zinc-700/50 rounded-2xl p-8 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                      <Skull className="w-40 h-40 text-zinc-200" />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <Ghost className="w-6 h-6 text-zinc-400" />
+                          <h3 className="text-2xl font-bold text-zinc-200">灰帽增长实验室 (Grey Hat Lab)</h3>
+                          <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 text-[10px] uppercase tracking-widest font-bold rounded">Unconventional</span>
+                        </div>
+                        <button 
+                          onClick={generateGreyHat}
+                          disabled={greyHatLoading}
+                          className="text-xs flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors border border-zinc-700"
+                        >
+                           {greyHatLoading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : <RefreshCw className="w-3 h-3" />}
+                           全部重写
+                        </button>
+                      </div>
+                      <p className="text-zinc-500 text-sm mb-6 max-w-2xl">{result.grey_area.intro} <span className="text-zinc-600 italic">(风险提示：以下手段仅供参考，请在法律允许范围内操作)</span></p>
+                      
+                      <div className="grid md:grid-cols-3 gap-4">
+                        {result.grey_area.tactics.map((tactic: any, idx: number) => (
+                          <div key={idx} className="bg-zinc-950/80 border border-zinc-800 p-5 rounded-xl hover:border-zinc-600 transition-colors animate-in fade-in slide-in-from-bottom-2 relative group/card">
+                            <button
+                              onClick={() => regenerateGreyHatItem(idx)}
+                              disabled={greyHatItemLoading[idx]}
+                              className="absolute top-3 right-3 p-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 rounded-md transition-opacity opacity-0 group-hover/card:opacity-100 disabled:opacity-100"
+                              title="换一换这个手段"
+                            >
+                              {greyHatItemLoading[idx] ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : <RefreshCw className="w-3 h-3" />}
+                            </button>
+                            <h4 className="text-zinc-300 font-bold mb-2 pr-8">
+                              {tactic.title}
+                            </h4>
+                            <p className="text-zinc-500 text-sm mb-4 leading-relaxed">{tactic.desc}</p>
+                            <div className="text-xs bg-red-950/30 text-red-400/80 px-2 py-1 rounded inline-block border border-red-900/30">
+                              风险: {tactic.risk}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                 </div>
+              </div>
+            )}
+
+            {result.verdict.status === 'GO' && (
+              <>
+                {/* 2. Business Model & Pitch */}
+                <div>
+                  <div className="flex items-center gap-4 mb-8">
+                     <h3 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                      <DollarSign className="w-7 h-7 text-emerald-500" />
+                      商业模式与路演
+                    </h3>
+                    <div className="h-px bg-slate-800 flex-1"></div>
+                  </div>
+                  
+                  <div className="grid md:grid-cols-2 gap-8">
+                    {['direction_a', 'direction_b'].map((dirKey) => (
+                      <div key={dirKey} className="bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-6 relative overflow-hidden group hover:shadow-2xl hover:shadow-cyan-900/10 transition-all duration-500">
+                        {/* New REGENERATE MODEL Button */}
+                        <button
+                          onClick={() => regenerateModel(dirKey)}
+                          disabled={modelRegenLoading[dirKey]}
+                          className="absolute top-4 right-4 p-2 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 rounded-lg transition-colors z-10 border border-slate-700/50"
+                          title="换个商业思路"
+                        >
+                           {modelRegenLoading[dirKey] ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : <RefreshCw className="w-3 h-3" />}
+                        </button>
+
+                        <div className="flex justify-between items-start mb-4">
+                          <span className={`px-3 py-1 text-xs font-bold rounded-full border ${
+                            dirKey === 'direction_a' 
+                              ? 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400' 
+                              : 'bg-purple-950/30 border-purple-500/30 text-purple-400'
+                          }`}>
+                            {dirKey === 'direction_a' ? 'SaaS / Product' : 'Service / Agency'}
+                          </span>
+                        </div>
+                        <h4 className="text-xl font-bold text-slate-100 mb-3 pr-8">{result.business_model[dirKey].name}</h4>
+                        <div className="mb-6 h-20 overflow-y-auto custom-scrollbar">
+                           <SimpleMarkdown text={result.business_model[dirKey].desc} />
+                        </div>
+                        
+                        <button 
+                          onClick={() => generatePitch(dirKey, result.business_model[dirKey])}
+                          disabled={pitchLoading[dirKey]}
+                          className="w-full py-2.5 border border-slate-700 hover:border-emerald-500 hover:text-emerald-400 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all bg-slate-900/50"
+                        >
+                          {pitchLoading[dirKey] ? (
+                             <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                             pitches[dirKey] ? <RefreshCw className="w-3 h-3" /> : <Mic className="w-3 h-3" />
+                          )}
+                          {pitches[dirKey] ? '不满意？重写电梯演讲' : '生成 30秒 电梯演讲'}
+                        </button>
+
+                        {pitches[dirKey] && (
+                          <div className="mt-4 p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-xl animate-in fade-in slide-in-from-top-2">
+                             <div className="flex items-center gap-2 mb-2 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                                <Mic className="w-3 h-3" /> Pitch Script
+                             </div>
+                             <div className="border-l-2 border-emerald-500/30 pl-3">
+                               <SimpleMarkdown text={pitches[dirKey]} />
+                             </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Execution Plan */}
+                <div>
+                   <div className="flex items-center justify-between mb-8">
+                     <div className="flex items-center gap-4 flex-grow">
+                       <h3 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                        <Rocket className="w-7 h-7 text-cyan-500" />
+                        执行与实战工具箱
+                      </h3>
+                      <div className="h-px bg-slate-800 flex-1"></div>
+                     </div>
+                     {/* New REGENERATE PLAN Button */}
+                     <button 
+                        onClick={regenerateExecutionPlan}
+                        disabled={planRegenLoading}
+                        className="ml-4 text-xs flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-lg transition-colors border border-slate-700"
+                      >
+                         {planRegenLoading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : <RefreshCw className="w-3 h-3" />}
+                         重写全套方案
+                      </button>
+                  </div>
+
+                  <div className="space-y-8">
+                    {result.execution_plan.map((step: any, idx: number) => (
+                      <div key={idx} className="flex gap-6 group">
+                         <div className="flex flex-col items-center relative">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border-2 z-10 bg-slate-950 ${
+                              idx === 0 ? 'border-slate-600 text-slate-300' :
+                              idx === 1 ? 'border-cyan-600 text-cyan-400' :
+                              'border-emerald-600 text-emerald-400'
+                            }`}>
+                              {idx}
+                            </div>
+                            {idx !== result.execution_plan.length - 1 && (
+                              <div className="w-0.5 h-full bg-slate-800 absolute top-10 bottom-[-32px]"></div>
+                            )}
+                         </div>
+
+                         <div className="flex-grow bg-slate-900/40 border border-slate-800 rounded-2xl p-6 hover:bg-slate-900/80 transition-all">
+                            <div className="flex justify-between items-start mb-3">
+                              <h4 className={`text-lg font-bold ${
+                                idx === 0 ? 'text-slate-300' : idx === 1 ? 'text-cyan-400' : 'text-emerald-400'
+                              }`}>{step.phase}</h4>
+                              <button 
+                                onClick={() => generatePhaseTool(idx)}
+                                disabled={phaseLoading[idx]}
+                                className="text-xs bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-2 border border-slate-700 hover:border-emerald-500"
+                              >
+                                {phaseLoading[idx] ? (
+                                   <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                   phaseResults[idx] ? <RefreshCw className="w-3 h-3" /> : <PenTool className="w-3 h-3" />
+                                )}
+                                {phaseResults[idx] ? '不满意？换一换' : (idx === 0 ? '生成冷启动话术' : idx === 1 ? '生成落地页文案' : '生成引流标题')}
+                              </button>
+                            </div>
+                            <SimpleMarkdown text={step.action} />
+                            {phaseResults[idx] && (
+                              <div className="mt-4 p-4 bg-slate-950 border border-slate-700/50 rounded-xl relative animate-in fade-in slide-in-from-top-2">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-emerald-500 to-cyan-500 rounded-l-xl"></div>
+                                <SimpleMarkdown text={phaseResults[idx]} />
+                              </div>
+                            )}
+                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. VC Roast */}
+                <div className="mt-16">
+                   <div className="bg-gradient-to-r from-red-950/20 to-slate-900 border border-red-900/30 rounded-2xl p-1 relative overflow-hidden">
+                      <div className="bg-slate-950/80 rounded-xl p-8 relative z-10 backdrop-blur-sm">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                           <div>
+                              <h3 className="text-2xl font-bold text-red-400 flex items-center gap-2">
+                                <Flame className="w-6 h-6 fill-current" />
+                                压力测试 (The VC Roast)
+                              </h3>
+                           </div>
+                           <button 
+                              onClick={generateVcRoast}
+                              disabled={roastLoading}
+                              className="px-5 py-2.5 bg-red-900/20 hover:bg-red-900/40 border border-red-700/50 hover:border-red-500 text-red-200 rounded-lg font-bold text-sm transition-all flex items-center gap-2"
+                            >
+                              {roastLoading ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : (roastResult ? <RefreshCw className="w-4 h-4" /> : <Zap className="w-4 h-4 fill-current" />)}
+                              {roastResult ? '全员大换血 (Regenerate All)' : '开始拷问'}
+                            </button>
+                        </div>
+                        {roastResult && (
+                          <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4">
+                            {roastResult.questions.map((item: any, i: number) => (
+                              <div key={i} className="bg-slate-900 border border-red-900/30 rounded-lg p-4 relative group/card">
+                                 <button
+                                    onClick={() => regenerateRoastItem(i)}
+                                    disabled={roastItemLoading[i]}
+                                    className="absolute top-3 right-3 p-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-400 rounded-md transition-opacity opacity-0 group-hover/card:opacity-100 disabled:opacity-100"
+                                    title="换一换这个问题"
+                                  >
+                                    {roastItemLoading[i] ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div> : <RefreshCw className="w-3 h-3" />}
+                                  </button>
+                                 <div className="flex items-start gap-3 mb-2 pr-8">
+                                    <span className="bg-red-950 text-red-400 text-xs font-bold px-2 py-1 rounded border border-red-900/50 flex-shrink-0">Q{i+1}</span>
+                                    <h4 className="text-red-200 font-medium text-sm">{item.q}</h4>
+                                 </div>
+                                 <div className="flex items-start gap-3 pl-2 border-l-2 border-emerald-500/30 ml-2 pt-2">
+                                    <span className="text-emerald-500 font-bold text-xs pt-0.5">A:</span>
+                                    <p className="text-slate-400 text-sm">{item.a}</p>
+                                 </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                   </div>
+                </div>
+              </>
+            )}
+
+            {/* 5. Chat Interface */}
+            <div className="mt-16 border-t border-slate-800 pt-10">
+              <div className="bg-slate-900 rounded-2xl border border-slate-800 flex flex-col h-[500px] shadow-2xl">
+                <div className="p-4 border-b border-slate-800 flex items-center gap-3 bg-slate-950/50 rounded-t-2xl">
+                   <div className="bg-indigo-500/20 p-2 rounded-lg"><MessageSquare className="w-5 h-5 text-indigo-400" /></div>
+                   <div>
+                     <h3 className="font-bold text-slate-200">导师问答室 (Mentor Chat)</h3>
+                     <p className="text-xs text-slate-500">所有对话均会被【保存全案】功能记录。</p>
+                   </div>
+                </div>
+                <div className="flex-grow overflow-y-auto p-6 space-y-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-slate-900/50 [&::-webkit-scrollbar-thumb]:bg-emerald-500/30 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-emerald-500/50">
+                  {chatHistory.length === 0 && (
+                    <div className="text-center text-slate-600 my-20">
+                      <p className="text-sm">您可以问：</p>
+                      <div className="flex flex-wrap justify-center gap-2 mt-4">
+                        <button onClick={() => setChatInput("这个灰色手段具体怎么操作才不会被封号？")} className="px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-400 transition-colors">询问灰产操作细节</button>
+                        <button onClick={() => setChatInput("Landing Page 的 H1 不够吸引人，换一种风格")} className="px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-400 transition-colors">优化 H1 标题</button>
+                      </div>
+                    </div>
+                  )}
+                  {chatHistory.map((msg: any, idx: number) => (
+                    <div key={idx} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-slate-700' : 'bg-emerald-600'}`}>
+                        {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                      </div>
+                      <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed ${msg.role === 'user' ? 'bg-slate-800 text-slate-200 rounded-tr-none' : 'bg-emerald-950/30 border border-emerald-500/20 text-slate-200 rounded-tl-none'}`}>
+                         <SimpleMarkdown text={msg.content} />
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading && <div className="flex gap-4"><div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div><div className="bg-emerald-950/30 border border-emerald-500/20 p-4 rounded-2xl rounded-tl-none"><div className="flex gap-1"><span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce"></span><span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce delay-100"></span><span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce delay-200"></span></div></div></div>}
+                  <div ref={chatEndRef}></div>
+                </div>
+                <div className="p-4 bg-slate-950 rounded-b-2xl border-t border-slate-800">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
+                      placeholder="继续向导师提问..."
+                      disabled={chatLoading}
+                      className="w-full bg-slate-900 text-slate-200 border border-slate-700 rounded-xl pl-4 pr-12 py-3 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                    />
+                    <button onClick={handleChatSubmit} disabled={!chatInput.trim() || chatLoading} className="absolute right-2 top-2 p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors disabled:opacity-50">
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default StartupMentor;
