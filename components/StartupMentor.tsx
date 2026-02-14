@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Briefcase, DollarSign, Zap, AlertTriangle, CheckCircle, XCircle, ChevronRight, Terminal, BarChart3, Rocket, Eye, Sparkles, MessageSquare, Send, User, Bot, BookOpen, Mic, Flame, Mail, Layout, PenTool, ArrowRight, Copy, Ghost, Download, FileText, Skull, RefreshCw } from 'lucide-react';
+import PaywallModal from './PaywallModal';
 
 /**
  * 商业孵化器首席分析师 - 0-1 创业导师应用
@@ -43,6 +44,7 @@ const cleanJson = (text: string) => {
 };
 
 const StartupMentor = () => {
+  const [showPaywall, setShowPaywall] = useState(false);
   const [jdText, setJdText] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -147,11 +149,19 @@ const StartupMentor = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
       });
+
+      if (response.status === 429) {
+        setShowPaywall(true);
+        throw new Error("Rate limit exceeded");
+      }
+
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       return data.text;
     } catch (err: any) {
-      console.error(err);
+      if (err.message !== "Rate limit exceeded") {
+        console.error(err);
+      }
       throw new Error(err.message || "Failed to fetch AI response");
     }
   };
@@ -446,6 +456,7 @@ const StartupMentor = () => {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 pb-32 flex-grow w-full">
+        <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
         
         {/* Intro */}
         {!result && !loading && (

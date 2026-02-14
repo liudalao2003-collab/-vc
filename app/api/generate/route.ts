@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { currentUser } from '@clerk/nextjs/server';
+import { checkRateLimit } from '@/lib/rate-limit';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
@@ -9,9 +10,19 @@ const openai = new OpenAI({
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const user = await currentUser();
+    if (!user) {
       return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const email = user.emailAddresses[0]?.emailAddress;
+    if (!email) {
+      return new NextResponse("Email not found", { status: 400 });
+    }
+
+    const { success } = await checkRateLimit(email);
+    if (!success) {
+      return new NextResponse("达到免费限制 (Rate limit exceeded)", { status: 429 });
     }
 
     const body = await req.json();
