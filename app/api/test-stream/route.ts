@@ -1,25 +1,39 @@
-import { createOpenAI } from '@ai-sdk/openai'; 
-import { streamText } from 'ai'; 
 
-// 核心修复：强制使用 Node.js 运行时，并设置 60 秒超时
-// 这种方式比 Edge 更稳定，兼容性最好
-export const maxDuration = 60; 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
-const deepseek = createOpenAI({
-    apiKey: process.env.DEEPSEEK_API_KEY, 
-    baseURL: 'https://api.deepseek.com',
-}); 
+export async function POST(req: Request) {
+  try {
+    const { prompt } = await req.json();
+    console.log("正在请求 DeepSeek 接口...");
 
-export async function POST(req: Request) { 
-    try { 
-        const { prompt } = await req.json(); 
-        const result = await streamText({ 
-            model: deepseek('deepseek-chat'), 
-            prompt: prompt || '你好', 
-        }); 
-        return result.toTextStreamResponse(); 
-    } catch (error) { 
-        console.error('API 错误：', error); 
-        return new Response(JSON.stringify({ error: '服务器错误', details: error }), { status: 500 }); 
+    // 直接请求 DeepSeek 官方标准的 chat 接口
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: prompt || '你好' }],
+        stream: true, // 必须开启流式
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("DeepSeek 原生报错:", errorText);
+      return new Response(`DeepSeek Error: ${response.status} - ${errorText}`, { status: response.status });
     }
+
+    // 直接把 DeepSeek 的流转发给前端
+    return new Response(response.body, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+
+  } catch (error: any) {
+    console.error("服务器错误：", error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
 }
